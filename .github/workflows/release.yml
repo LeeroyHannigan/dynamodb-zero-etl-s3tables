@@ -1,0 +1,160 @@
+name: Release
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: 'corretto'
+          java-version: '17'
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.x'
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Test
+        run: npm test
+
+      - name: Package all targets
+        run: npx jsii-pacmak
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  publish-npm:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Publish to npm
+        run: npx -p publib publib-npm
+        env:
+          NPM_TRUSTED_PUBLISHER: "true"
+
+  publish-pypi:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Publish to PyPI
+        run: npx -p publib publib-pypi
+        env:
+          PYPI_TRUSTED_PUBLISHER: "true"
+
+  # TODO: Enable when secrets are configured
+  # publish-nuget:
+  #   needs: build
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - uses: actions/download-artifact@v4
+  #       with:
+  #         name: dist
+  #         path: dist/
+  #     - uses: actions/setup-dotnet@v4
+  #       with:
+  #         dotnet-version: '8.x'
+  #     - name: Publish to NuGet
+  #       run: npx -p publib publib-nuget
+  #       env:
+  #         NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+
+  # publish-maven:
+  #   needs: build
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - uses: actions/download-artifact@v4
+  #       with:
+  #         name: dist
+  #         path: dist/
+  #     - uses: actions/setup-java@v4
+  #       with:
+  #         distribution: 'corretto'
+  #         java-version: '17'
+  #     - uses: actions/setup-node@v4
+  #       with:
+  #         node-version: '20'
+  #     - name: Publish to Maven Central
+  #       run: npx -p publib publib-maven
+  #       env:
+  #         MAVEN_SERVER_ID: central-ossrh
+  #         MAVEN_USERNAME: ${{ secrets.MAVEN_USERNAME }}
+  #         MAVEN_PASSWORD: ${{ secrets.MAVEN_PASSWORD }}
+  #         MAVEN_GPG_PRIVATE_KEY: ${{ secrets.MAVEN_GPG_PRIVATE_KEY }}
+  #         MAVEN_GPG_PRIVATE_KEY_PASSPHRASE: ${{ secrets.MAVEN_GPG_PRIVATE_KEY_PASSPHRASE }}
+
+  # publish-golang:
+  #   needs: build
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - uses: actions/download-artifact@v4
+  #       with:
+  #         name: dist
+  #         path: dist/
+  #     - uses: actions/setup-go@v5
+  #       with:
+  #         go-version: '1.23'
+  #     - uses: actions/setup-node@v4
+  #       with:
+  #         node-version: '20'
+  #     - name: Publish to Go
+  #       run: npx -p publib publib-golang
+  #       env:
+  #         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  #         GIT_USER_NAME: github-actions
+  #         GIT_USER_EMAIL: github-actions@github.com

@@ -9,3 +9,7 @@ tsconfig.json
 
 # Ensure .jsii is included
 !.jsii
+
+
+# Exclude jsii outdir
+dist
