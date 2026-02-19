@@ -1,7 +1,7 @@
 # dynamodb-zero-etl-s3tables
 
-[![npm version](https://img.shields.io/npm/v/dynamodb-zero-etl-s3tables.svg)](https://www.npmjs.com/package/dynamodb-zero-etl-s3tables)
-[![PyPI version](https://img.shields.io/pypi/v/dynamodb-zero-etl-s3tables.svg)](https://pypi.org/project/dynamodb-zero-etl-s3tables/)
+[![npm version](https://badge.fury.io/js/dynamodb-zero-etl-s3tables.svg)](https://www.npmjs.com/package/dynamodb-zero-etl-s3tables)
+[![PyPI version](https://badge.fury.io/py/dynamodb-zero-etl-s3tables.svg)](https://pypi.org/project/dynamodb-zero-etl-s3tables/)
 [![NuGet version](https://img.shields.io/nuget/v/LeeroyHannigan.CDK.DynamoDbZeroEtlS3Tables.svg)](https://www.nuget.org/packages/LeeroyHannigan.CDK.DynamoDbZeroEtlS3Tables/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![jsii](https://img.shields.io/badge/jsii-compatible-brightgreen.svg)](https://github.com/aws/jsii)
