@@ -7,3 +7,4 @@ test-dist/
 *.d.ts
 *.d.ts.map
 !jest.config.js
+!lambda/*.js
