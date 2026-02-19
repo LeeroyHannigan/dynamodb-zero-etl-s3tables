@@ -146,6 +146,9 @@ export class DynamoDbZeroEtlToS3Tables extends Construct {
       },
     }));
 
+    const catalogArn = `arn:aws:glue:${stack.region}:${stack.account}:catalog`;
+    const databaseArn = `arn:aws:glue:${stack.region}:${stack.account}:database/*`;
+
     // Glue Catalog resource policy (no CFN support — use custom resource)
     const catalogPolicy = new cr.AwsCustomResource(this, 'CatalogPolicy', {
       onCreate: {
@@ -159,7 +162,7 @@ export class DynamoDbZeroEtlToS3Tables extends Construct {
                 Effect: 'Allow',
                 Principal: { AWS: `arn:aws:iam::${stack.account}:root` },
                 Action: 'glue:CreateInboundIntegration',
-                Resource: [s3TablesCatalogArn, `${s3TablesCatalogArn}/*`],
+                Resource: [catalogArn, databaseArn],
                 Condition: {
                   StringLike: { 'aws:SourceArn': tableArnStr },
                 },
@@ -168,10 +171,22 @@ export class DynamoDbZeroEtlToS3Tables extends Construct {
                 Effect: 'Allow',
                 Principal: { Service: 'glue.amazonaws.com' },
                 Action: 'glue:AuthorizeInboundIntegration',
-                Resource: [s3TablesCatalogArn, `${s3TablesCatalogArn}/*`],
+                Resource: [catalogArn, databaseArn],
                 Condition: {
                   StringEquals: { 'aws:SourceArn': tableArnStr },
                 },
+              },
+              {
+                Effect: 'Allow',
+                Principal: { AWS: `arn:aws:iam::${stack.account}:root` },
+                Action: 'glue:CreateInboundIntegration',
+                Resource: s3TablesCatalogArn,
+              },
+              {
+                Effect: 'Allow',
+                Principal: { Service: 'glue.amazonaws.com' },
+                Action: 'glue:AuthorizeInboundIntegration',
+                Resource: s3TablesCatalogArn,
               },
             ],
           }),
