@@ -1,6 +1,6 @@
 {
   "name": "dynamodb-zero-etl-s3tables",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "AWS CDK L3 construct that creates a complete zero-ETL integration from Amazon DynamoDB to Amazon S3 Tables (Apache Iceberg)",
   "main": "lib/index.js",
   "types": "lib/index.d.ts",
