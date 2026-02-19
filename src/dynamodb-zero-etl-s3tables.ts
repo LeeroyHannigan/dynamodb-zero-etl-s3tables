@@ -199,6 +199,7 @@ export class DynamoDbZeroEtlToS3Tables extends Construct {
         roleArn: this.targetRole.roleArn,
       },
     });
+    targetResourceProperty.addDependency(this.tableBucket);
 
     // Glue Zero-ETL Integration
     this.integration = new glue.CfnIntegration(this, 'Integration', {
