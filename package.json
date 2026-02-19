@@ -1,0 +1,74 @@
+{
+  "name": "dynamodb-zero-etl-s3tables",
+  "version": "0.1.0",
+  "description": "AWS CDK L3 construct that creates a complete zero-ETL integration from Amazon DynamoDB to Amazon S3 Tables (Apache Iceberg)",
+  "main": "lib/index.js",
+  "types": "lib/index.d.ts",
+  "scripts": {
+    "build": "jsii",
+    "build:watch": "jsii --watch",
+    "package": "jsii-pacmak",
+    "test": "jest"
+  },
+  "keywords": [
+    "aws-cdk",
+    "awscdk",
+    "dynamodb",
+    "zero-etl",
+    "s3-tables",
+    "iceberg",
+    "glue",
+    "analytics"
+  ],
+  "author": {
+    "name": "Lee Hannigan",
+    "email": "lhnng@amazon.com"
+  },
+  "repository": {
+    "url": "https://github.com/LeeroyHannigan/dynamodb-zero-etl-s3tables.git"
+  },
+  "license": "MIT",
+  "stability": "experimental",
+  "jsii": {
+    "outdir": "dist",
+    "versionFormat": "short",
+    "targets": {
+      "java": {
+        "package": "io.github.leeroyhannigan.dynamodb.zeroetl.s3tables",
+        "maven": {
+          "groupId": "io.github.leeroyhannigan",
+          "artifactId": "dynamodb-zero-etl-s3tables"
+        }
+      },
+      "python": {
+        "distName": "dynamodb-zero-etl-s3tables",
+        "module": "dynamodb_zero_etl_s3tables"
+      },
+      "dotnet": {
+        "namespace": "LeeroyHannigan.CDK.DynamoDbZeroEtlS3Tables",
+        "packageId": "LeeroyHannigan.CDK.DynamoDbZeroEtlS3Tables"
+      },
+      "go": {
+        "packageName": "dynamodbzeroetls3tables",
+        "moduleName": "github.com/LeeroyHannigan/dynamodb-zero-etl-s3tables-go"
+      }
+    },
+    "tsc": {
+      "outDir": "lib",
+      "rootDir": "src"
+    }
+  },
+  "peerDependencies": {
+    "aws-cdk-lib": "^2.238.0",
+    "constructs": "^10.5.1"
+  },
+  "devDependencies": {
+    "@types/jest": "^30.0.0",
+    "aws-cdk-lib": "2.238.0",
+    "constructs": "10.5.1",
+    "jest": "^30.2.0",
+    "jsii": "^5.9.27",
+    "jsii-pacmak": "^1.126.0",
+    "ts-jest": "^29.4.6"
+  }
+}

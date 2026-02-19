@@ -1,0 +1,11 @@
+src/
+test/
+test-dist/
+dist/
+jest.config.js
+tsconfig.json
+.git
+.gitignore
+
+# Ensure .jsii is included
+!.jsii
