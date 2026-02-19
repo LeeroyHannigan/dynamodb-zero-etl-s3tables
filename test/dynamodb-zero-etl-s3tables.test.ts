@@ -33,7 +33,7 @@ describe('DynamoDbZeroEtlToS3Tables', () => {
 
     const template = Template.fromStack(stack);
     template.resourceCountIs('AWS::S3Tables::TableBucket', 1);
-    template.resourceCountIs('AWS::IAM::Role', 2); // target role + custom resource Lambda role
+    template.resourceCountIs('AWS::IAM::Role', 2); // target role + Lambda execution role
     template.resourceCountIs('AWS::Glue::Integration', 1);
     template.resourceCountIs('AWS::Glue::IntegrationResourceProperty', 1);
   });
@@ -163,8 +163,9 @@ describe('DynamoDbZeroEtlToS3Tables', () => {
     });
 
     const template = Template.fromStack(stack);
-    template.hasResourceProperties('Custom::AWS', {
-      Create: Match.stringLikeRegexp('putResourcePolicy'),
+    template.resourceCountIs('AWS::Lambda::Function', 1);
+    template.hasResourceProperties('AWS::CloudFormation::CustomResource', {
+      Statements: Match.stringLikeRegexp('CreateInbound'),
     });
   });
 

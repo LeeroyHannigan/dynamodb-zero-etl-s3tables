@@ -2,8 +2,9 @@ import * as cdk from 'aws-cdk-lib';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import * as glue from 'aws-cdk-lib/aws-glue';
 import * as iam from 'aws-cdk-lib/aws-iam';
+import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as s3tables from 'aws-cdk-lib/aws-s3tables';
-import * as cr from 'aws-cdk-lib/custom-resources';
+import * as path from 'path';
 import { Construct } from 'constructs';
 
 /**
@@ -36,7 +37,7 @@ export interface DynamoDbZeroEtlToS3TablesProps {
  * - An S3 Table Bucket for Iceberg storage
  * - An IAM role with least-privilege permissions for Glue
  * - A DynamoDB resource policy allowing Glue to export data
- * - A Glue Data Catalog resource policy (via custom resource)
+ * - A Glue Data Catalog resource policy (via custom resource, merged with existing policy)
  * - A Glue IntegrationResourceProperty wiring the target role
  * - A Glue CfnIntegration connecting source to target
  */
@@ -68,6 +69,9 @@ export class DynamoDbZeroEtlToS3Tables extends Construct {
     const tableArnStr = `arn:aws:dynamodb:${stack.region}:${stack.account}:table/${tableName}`;
     const bucketArnStr = `arn:aws:s3tables:${stack.region}:${stack.account}:bucket/${props.tableBucketName}`;
     const s3TablesCatalogArn = `arn:aws:glue:${stack.region}:${stack.account}:catalog/s3tablescatalog/${props.tableBucketName}`;
+    const catalogArn = `arn:aws:glue:${stack.region}:${stack.account}:catalog`;
+    const databaseArn = `arn:aws:glue:${stack.region}:${stack.account}:database/*`;
+    const sidPrefix = `ZeroEtl_${props.tableBucketName.replace(/[^a-zA-Z0-9]/g, '')}`;
 
     // S3 Table Bucket (Iceberg-native)
     this.tableBucket = new s3tables.CfnTableBucket(this, 'TableBucket', {
@@ -100,10 +104,7 @@ export class DynamoDbZeroEtlToS3Tables extends Construct {
 
     this.targetRole.addToPolicy(new iam.PolicyStatement({
       actions: ['glue:GetDatabase'],
-      resources: [
-        `arn:aws:glue:${stack.region}:${stack.account}:catalog`,
-        `arn:aws:glue:${stack.region}:${stack.account}:database/*`,
-      ],
+      resources: [catalogArn, databaseArn],
     }));
 
     this.targetRole.addToPolicy(new iam.PolicyStatement({
@@ -112,11 +113,7 @@ export class DynamoDbZeroEtlToS3Tables extends Construct {
         'glue:DeleteTable', 'glue:UpdateTable',
         'glue:GetTableVersion', 'glue:GetTableVersions', 'glue:GetResourcePolicy',
       ],
-      resources: [
-        `arn:aws:glue:${stack.region}:${stack.account}:catalog`,
-        `arn:aws:glue:${stack.region}:${stack.account}:database/*`,
-        `arn:aws:glue:${stack.region}:${stack.account}:table/*/*`,
-      ],
+      resources: [catalogArn, databaseArn, `arn:aws:glue:${stack.region}:${stack.account}:table/*/*`],
     }));
 
     this.targetRole.addToPolicy(new iam.PolicyStatement({
@@ -146,65 +143,59 @@ export class DynamoDbZeroEtlToS3Tables extends Construct {
       },
     }));
 
-    const catalogArn = `arn:aws:glue:${stack.region}:${stack.account}:catalog`;
-    const databaseArn = `arn:aws:glue:${stack.region}:${stack.account}:database/*`;
+    // Catalog policy statements with unique Sids for merge/remove
+    const policyStatements = [
+      {
+        Sid: `${sidPrefix}_CreateInbound_Catalog`,
+        Effect: 'Allow',
+        Principal: { AWS: `arn:aws:iam::${stack.account}:root` },
+        Action: 'glue:CreateInboundIntegration',
+        Resource: [catalogArn, databaseArn],
+        Condition: { StringLike: { 'aws:SourceArn': tableArnStr } },
+      },
+      {
+        Sid: `${sidPrefix}_AuthInbound_Catalog`,
+        Effect: 'Allow',
+        Principal: { Service: 'glue.amazonaws.com' },
+        Action: 'glue:AuthorizeInboundIntegration',
+        Resource: [catalogArn, databaseArn],
+        Condition: { StringEquals: { 'aws:SourceArn': tableArnStr } },
+      },
+      {
+        Sid: `${sidPrefix}_CreateInbound_S3Tables`,
+        Effect: 'Allow',
+        Principal: { AWS: `arn:aws:iam::${stack.account}:root` },
+        Action: 'glue:CreateInboundIntegration',
+        Resource: s3TablesCatalogArn,
+      },
+      {
+        Sid: `${sidPrefix}_AuthInbound_S3Tables`,
+        Effect: 'Allow',
+        Principal: { Service: 'glue.amazonaws.com' },
+        Action: 'glue:AuthorizeInboundIntegration',
+        Resource: s3TablesCatalogArn,
+      },
+    ];
 
-    // Glue Catalog resource policy (no CFN support — use custom resource)
-    const catalogPolicy = new cr.AwsCustomResource(this, 'CatalogPolicy', {
-      onCreate: {
-        service: 'Glue',
-        action: 'putResourcePolicy',
-        parameters: {
-          PolicyInJson: JSON.stringify({
-            Version: '2012-10-17',
-            Statement: [
-              {
-                Effect: 'Allow',
-                Principal: { AWS: `arn:aws:iam::${stack.account}:root` },
-                Action: 'glue:CreateInboundIntegration',
-                Resource: [catalogArn, databaseArn],
-                Condition: {
-                  StringLike: { 'aws:SourceArn': tableArnStr },
-                },
-              },
-              {
-                Effect: 'Allow',
-                Principal: { Service: 'glue.amazonaws.com' },
-                Action: 'glue:AuthorizeInboundIntegration',
-                Resource: [catalogArn, databaseArn],
-                Condition: {
-                  StringEquals: { 'aws:SourceArn': tableArnStr },
-                },
-              },
-              {
-                Effect: 'Allow',
-                Principal: { AWS: `arn:aws:iam::${stack.account}:root` },
-                Action: 'glue:CreateInboundIntegration',
-                Resource: s3TablesCatalogArn,
-              },
-              {
-                Effect: 'Allow',
-                Principal: { Service: 'glue.amazonaws.com' },
-                Action: 'glue:AuthorizeInboundIntegration',
-                Resource: s3TablesCatalogArn,
-              },
-            ],
-          }),
-          EnableHybrid: 'TRUE',
-        },
-        physicalResourceId: cr.PhysicalResourceId.of('CatalogPolicy'),
+    // Lambda for read-modify-write catalog policy management
+    const catalogPolicyFn = new lambda.Function(this, 'CatalogPolicyFunction', {
+      runtime: lambda.Runtime.NODEJS_22_X,
+      handler: 'catalog-policy-handler.handler',
+      code: lambda.Code.fromAsset(path.join(__dirname, '..', 'lambda')),
+      timeout: cdk.Duration.seconds(30),
+    });
+
+    catalogPolicyFn.addToRolePolicy(new iam.PolicyStatement({
+      actions: ['glue:GetResourcePolicy', 'glue:PutResourcePolicy'],
+      resources: [catalogArn],
+    }));
+
+    const catalogPolicy = new cdk.CustomResource(this, 'CatalogPolicy', {
+      serviceToken: catalogPolicyFn.functionArn,
+      properties: {
+        Statements: JSON.stringify(policyStatements),
+        PolicyId: sidPrefix,
       },
-      onDelete: {
-        service: 'Glue',
-        action: 'deleteResourcePolicy',
-        parameters: {},
-      },
-      policy: cr.AwsCustomResourcePolicy.fromStatements([
-        new iam.PolicyStatement({
-          actions: ['glue:PutResourcePolicy', 'glue:DeleteResourcePolicy'],
-          resources: [`arn:aws:glue:${stack.region}:${stack.account}:catalog`],
-        }),
-      ]),
     });
 
     // Wire target role to integration target
