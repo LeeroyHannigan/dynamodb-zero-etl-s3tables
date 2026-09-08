@@ -66,8 +66,12 @@ describe('DynamoDbZeroEtlToS3Tables', () => {
     const template = Template.fromStack(stack);
     template.hasResourceProperties('AWS::Glue::Integration', {
       IntegrationName: 'my-integration',
-      SourceArn: 'arn:aws:dynamodb:us-east-1:123456789012:table/TestTable',
-      TargetArn: 'arn:aws:glue:us-east-1:123456789012:catalog/s3tablescatalog/my-bucket',
+      SourceArn: {
+        'Fn::Join': ['', ['arn:', { Ref: 'AWS::Partition' }, ':dynamodb:us-east-1:123456789012:table/TestTable']],
+      },
+      TargetArn: {
+        'Fn::Join': ['', ['arn:', { Ref: 'AWS::Partition' }, ':glue:us-east-1:123456789012:catalog/s3tablescatalog/my-bucket']],
+      },
     });
   });
 
@@ -101,7 +105,9 @@ describe('DynamoDbZeroEtlToS3Tables', () => {
         Statement: Match.arrayWith([
           Match.objectLike({
             Action: 's3tables:GetTableBucket',
-            Resource: 'arn:aws:s3tables:us-east-1:123456789012:bucket/my-bucket',
+            Resource: {
+              'Fn::Join': ['', ['arn:', { Ref: 'AWS::Partition' }, ':s3tables:us-east-1:123456789012:bucket/my-bucket']],
+            },
           }),
         ]),
       },
@@ -165,7 +171,9 @@ describe('DynamoDbZeroEtlToS3Tables', () => {
     const template = Template.fromStack(stack);
     template.resourceCountIs('AWS::Lambda::Function', 1);
     template.hasResourceProperties('AWS::CloudFormation::CustomResource', {
-      Statements: Match.stringLikeRegexp('CreateInbound'),
+      Statements: {
+        'Fn::Join': ['', Match.arrayWith([Match.stringLikeRegexp('CreateInbound')])],
+      },
     });
   });
 
@@ -282,5 +290,36 @@ describe('DynamoDbZeroEtlToS3Tables', () => {
         { Key: 'Environment', Value: 'production' },
       ]),
     });
+  });
+
+  test('target role glue permissions are scoped to the s3tables federated catalog', () => {
+    const stack = createStack();
+    const table = createTable(stack);
+
+    new DynamoDbZeroEtlToS3Tables(stack, 'ZeroEtl', {
+      table,
+      tableBucketName: 'my-bucket',
+    });
+
+    const rendered = JSON.stringify(Template.fromStack(stack).toJSON());
+    expect(rendered).toContain(':database/s3tablescatalog/my-bucket/*');
+    expect(rendered).toContain(':table/s3tablescatalog/my-bucket/*/*');
+    expect(rendered).not.toContain(':table/*/*');
+  });
+
+  test('s3tables catalog policy statements carry source conditions', () => {
+    const stack = createStack();
+    const table = createTable(stack);
+
+    new DynamoDbZeroEtlToS3Tables(stack, 'ZeroEtl', {
+      table,
+      tableBucketName: 'my-bucket',
+    });
+
+    const rendered = JSON.stringify(Template.fromStack(stack).toJSON());
+    const s3TablesConditioned = rendered.match(/CreateInbound_S3Tables[\s\S]{0,700}?aws:SourceArn/);
+    expect(s3TablesConditioned).not.toBeNull();
+    const authConditioned = rendered.match(/AuthInbound_S3Tables[\s\S]{0,700}?aws:SourceArn/);
+    expect(authConditioned).not.toBeNull();
   });
 });

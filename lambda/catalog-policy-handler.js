@@ -1,4 +1,4 @@
-const { GlueClient, GetResourcePolicyCommand, PutResourcePolicyCommand } = require('@aws-sdk/client-glue');
+const { GlueClient, GetResourcePolicyCommand, PutResourcePolicyCommand, DeleteResourcePolicyCommand } = require('@aws-sdk/client-glue');
 const https = require('https');
 const url = require('url');
 
@@ -34,8 +34,10 @@ exports.handler = async (event) => {
   const statements = JSON.parse(Statements);
   const ourSids = statements.map((s) => s.Sid);
 
-  try {
-    // Get existing policy
+  // Read-modify-write against the catalog policy. A concurrent writer
+  // between our Get and Put fails the PolicyHashCondition; re-read and
+  // retry once before giving up.
+  const apply = async () => {
     let existingStatements = [];
     let policyHash;
     try {
@@ -48,7 +50,7 @@ exports.handler = async (event) => {
       if (e.name !== 'EntityNotFoundException') throw e;
     }
 
-    // Remove our statements from existing policy
+    // Remove our statements from the existing policy
     const filtered = existingStatements.filter((s) => !ourSids.includes(s.Sid));
 
     if (RequestType === 'Create' || RequestType === 'Update') {
@@ -67,6 +69,24 @@ exports.handler = async (event) => {
         };
         if (policyHash) params.PolicyHashCondition = policyHash;
         await glue.send(new PutResourcePolicyCommand(params));
+      } else if (existingStatements.length > 0) {
+        // Our statements were the only ones: remove the policy entirely
+        // instead of leaving it behind after stack deletion.
+        await glue.send(new DeleteResourcePolicyCommand(
+          policyHash ? { PolicyHashCondition: policyHash } : {},
+        ));
+      }
+    }
+  };
+
+  try {
+    try {
+      await apply();
+    } catch (e) {
+      if (e.name === 'ConditionCheckFailureException' || e.name === 'ConcurrentModificationException') {
+        await apply();
+      } else {
+        throw e;
       }
     }
 
