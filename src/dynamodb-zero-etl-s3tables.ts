@@ -3,6 +3,7 @@ import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import * as glue from 'aws-cdk-lib/aws-glue';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
+import * as logs from 'aws-cdk-lib/aws-logs';
 import * as s3tables from 'aws-cdk-lib/aws-s3tables';
 import * as path from 'path';
 import { Construct } from 'constructs';
@@ -66,11 +67,17 @@ export class DynamoDbZeroEtlToS3Tables extends Construct {
     }
 
     const stack = cdk.Stack.of(this);
-    const tableArnStr = `arn:aws:dynamodb:${stack.region}:${stack.account}:table/${tableName}`;
-    const bucketArnStr = `arn:aws:s3tables:${stack.region}:${stack.account}:bucket/${props.tableBucketName}`;
-    const s3TablesCatalogArn = `arn:aws:glue:${stack.region}:${stack.account}:catalog/s3tablescatalog/${props.tableBucketName}`;
-    const catalogArn = `arn:aws:glue:${stack.region}:${stack.account}:catalog`;
-    const databaseArn = `arn:aws:glue:${stack.region}:${stack.account}:database/*`;
+    const tableArnStr = `arn:${stack.partition}:dynamodb:${stack.region}:${stack.account}:table/${tableName}`;
+    const bucketArnStr = `arn:${stack.partition}:s3tables:${stack.region}:${stack.account}:bucket/${props.tableBucketName}`;
+    const s3TablesCatalogArn = `arn:${stack.partition}:glue:${stack.region}:${stack.account}:catalog/s3tablescatalog/${props.tableBucketName}`;
+    const catalogArn = `arn:${stack.partition}:glue:${stack.region}:${stack.account}:catalog`;
+    // Database and table ARNs scoped to the federated S3 Tables catalog for
+    // this bucket, so the target role cannot touch the default Data Catalog.
+    const s3TablesDatabaseArn = `arn:${stack.partition}:glue:${stack.region}:${stack.account}:database/s3tablescatalog/${props.tableBucketName}/*`;
+    const s3TablesTableArn = `arn:${stack.partition}:glue:${stack.region}:${stack.account}:table/s3tablescatalog/${props.tableBucketName}/*/*`;
+    // Used only in the inbound-integration catalog policy statements, which
+    // are conditioned on the source table ARN.
+    const databaseArn = `arn:${stack.partition}:glue:${stack.region}:${stack.account}:database/*`;
     const sidPrefix = `ZeroEtl_${props.tableBucketName.replace(/[^a-zA-Z0-9]/g, '')}`;
 
     // S3 Table Bucket (Iceberg-native)
@@ -104,7 +111,7 @@ export class DynamoDbZeroEtlToS3Tables extends Construct {
 
     this.targetRole.addToPolicy(new iam.PolicyStatement({
       actions: ['glue:GetDatabase'],
-      resources: [catalogArn, databaseArn],
+      resources: [catalogArn, s3TablesCatalogArn, s3TablesDatabaseArn],
     }));
 
     this.targetRole.addToPolicy(new iam.PolicyStatement({
@@ -113,7 +120,7 @@ export class DynamoDbZeroEtlToS3Tables extends Construct {
         'glue:DeleteTable', 'glue:UpdateTable',
         'glue:GetTableVersion', 'glue:GetTableVersions', 'glue:GetResourcePolicy',
       ],
-      resources: [catalogArn, databaseArn, `arn:aws:glue:${stack.region}:${stack.account}:table/*/*`],
+      resources: [catalogArn, s3TablesCatalogArn, s3TablesDatabaseArn, s3TablesTableArn],
     }));
 
     this.targetRole.addToPolicy(new iam.PolicyStatement({
@@ -148,7 +155,7 @@ export class DynamoDbZeroEtlToS3Tables extends Construct {
       {
         Sid: `${sidPrefix}_CreateInbound_Catalog`,
         Effect: 'Allow',
-        Principal: { AWS: `arn:aws:iam::${stack.account}:root` },
+        Principal: { AWS: `arn:${stack.partition}:iam::${stack.account}:root` },
         Action: 'glue:CreateInboundIntegration',
         Resource: [catalogArn, databaseArn],
         Condition: { StringLike: { 'aws:SourceArn': tableArnStr } },
@@ -164,9 +171,10 @@ export class DynamoDbZeroEtlToS3Tables extends Construct {
       {
         Sid: `${sidPrefix}_CreateInbound_S3Tables`,
         Effect: 'Allow',
-        Principal: { AWS: `arn:aws:iam::${stack.account}:root` },
+        Principal: { AWS: `arn:${stack.partition}:iam::${stack.account}:root` },
         Action: 'glue:CreateInboundIntegration',
         Resource: s3TablesCatalogArn,
+        Condition: { StringLike: { 'aws:SourceArn': tableArnStr } },
       },
       {
         Sid: `${sidPrefix}_AuthInbound_S3Tables`,
@@ -174,6 +182,7 @@ export class DynamoDbZeroEtlToS3Tables extends Construct {
         Principal: { Service: 'glue.amazonaws.com' },
         Action: 'glue:AuthorizeInboundIntegration',
         Resource: s3TablesCatalogArn,
+        Condition: { StringEquals: { 'aws:SourceArn': tableArnStr } },
       },
     ];
 
@@ -183,10 +192,14 @@ export class DynamoDbZeroEtlToS3Tables extends Construct {
       handler: 'catalog-policy-handler.handler',
       code: lambda.Code.fromAsset(path.join(__dirname, '..', 'lambda')),
       timeout: cdk.Duration.seconds(30),
+      logGroup: new logs.LogGroup(this, 'CatalogPolicyFunctionLogs', {
+        retention: logs.RetentionDays.ONE_WEEK,
+        removalPolicy: cdk.RemovalPolicy.DESTROY,
+      }),
     });
 
     catalogPolicyFn.addToRolePolicy(new iam.PolicyStatement({
-      actions: ['glue:GetResourcePolicy', 'glue:PutResourcePolicy'],
+      actions: ['glue:GetResourcePolicy', 'glue:PutResourcePolicy', 'glue:DeleteResourcePolicy'],
       resources: [catalogArn],
     }));
 
